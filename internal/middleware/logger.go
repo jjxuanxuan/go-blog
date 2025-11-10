@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// LoggerMiddleware 打印简易访问日志：方法、路径、状态码、耗时。
 func LoggerMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()

@@ -4,6 +4,7 @@ import (
     "errors"
     "github.com/gin-gonic/gin"
     "go-blog/internal/dto"
+    "go-blog/internal/middleware"
     "go-blog/internal/model"
     "gorm.io/gorm"
     "net/http"
@@ -18,7 +19,7 @@ func NewPostHandler(db *gorm.DB) *PostHandler {
 	return &PostHandler{DB: db}
 }
 
-// CreatePost 创建文章
+// CreatePost 创建文章：从上下文获取 uid，避免客户端伪造 user_id。
 func (h *PostHandler) CreatePost(c *gin.Context) {
     var req dto.CreatePostReq
     if err := c.ShouldBindJSON(&req); err != nil {
@@ -30,13 +31,8 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
         return
     }
 
-    // 从鉴权中间件注入的上下文获取用户ID，避免前端伪造
-    v, ok := c.Get("user_id")
-    if !ok {
-        c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
-        return
-    }
-    uid := v.(uint)
+    // 从中间件中获取 uid（RequireUser 已保证存在）
+    uid := middleware.UID(c)
 
     post := model.Post{
         Title:   req.Title,
@@ -68,7 +64,7 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 
 }
 
-// GetAllPosts 获取所有文章列表（带作者信息）
+// GetAllPosts 获取所有文章列表（预加载作者信息）。
 func (h *PostHandler) GetAllPosts(c *gin.Context) {
 	var posts []model.Post
 
@@ -90,7 +86,7 @@ func (h *PostHandler) GetAllPosts(c *gin.Context) {
 
 }
 
-// GetPostsById 根据文章标题获取单篇文章详情
+// GetPostsById 根据ID查询单篇文章详情，预加载作者信息。
 func (h *PostHandler) GetPostsById(c *gin.Context) {
 	id := c.Param("id")
 
@@ -111,7 +107,7 @@ func (h *PostHandler) GetPostsById(c *gin.Context) {
 	})
 }
 
-// UpdatePost 更新文章内容
+// UpdatePost 更新文章内容：仅作者本人可更新，空字段不覆盖。
 func (h *PostHandler) UpdatePost(c *gin.Context) {
 
     id := c.Param("id")
@@ -125,13 +121,8 @@ func (h *PostHandler) UpdatePost(c *gin.Context) {
 		return
 	}
 
-    // 鉴权用户
-    v, ok := c.Get("user_id")
-    if !ok {
-        c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
-        return
-    }
-    uid := v.(uint)
+    // 鉴权用户（RequireUser 已保证存在）
+    uid := middleware.UID(c)
 
     var post model.Post
     if err := h.DB.First(&post, id).Error; err != nil {
@@ -173,18 +164,13 @@ func (h *PostHandler) UpdatePost(c *gin.Context) {
 
 }
 
-// DeletePost 删除文章
+// DeletePost 删除文章：仅作者本人可删除。
 func (h *PostHandler) DeletePost(c *gin.Context) {
 
     id := c.Param("id")
 
-    // 鉴权用户
-    v, ok := c.Get("user_id")
-    if !ok {
-        c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "未登录"})
-        return
-    }
-    uid := v.(uint)
+    // 鉴权用户（RequireUser 已保证存在）
+    uid := middleware.UID(c)
 
     var post model.Post
     if err := h.DB.First(&post, id).Error; err != nil {
