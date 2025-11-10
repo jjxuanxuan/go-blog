@@ -32,6 +32,7 @@ func InitDB() {
 	pass := getEnv("DB_PASS", "123456")
 	name := getEnv("DB_NAME", "go_blog")
 
+	//DB_DSN=app:123456@tcp(127.0.0.1:3306)/go_blog?charset=utf8mb4&parseTime=true&loc=Local
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local",
 		user, pass, host, port, name)
 
