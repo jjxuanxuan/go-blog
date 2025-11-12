@@ -35,6 +35,7 @@ func ttlFromEnv(key string, defMins int) time.Duration {
 
 // AccessTTL 访问令牌有效期（分钟），默认 120 分钟，可通过 ACCESS_TOKEN_TTL 配置。
 func AccessTTL() time.Duration  { return ttlFromEnv("ACCESS_TOKEN_TTL", 120) }
+
 // RefreshTTL 刷新令牌有效期（分钟），默认 7 天，可通过 REFRESH_TOKEN_TTL 配置。
 func RefreshTTL() time.Duration { return ttlFromEnv("REFRESH_TOKEN_TTL", 7*24*60) }
 

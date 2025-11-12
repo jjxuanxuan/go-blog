@@ -18,7 +18,9 @@ type AuthHandler struct {
     DB *gorm.DB
 }
 
-func NewAuthHandler(db *gorm.DB) *AuthHandler { return &AuthHandler{DB: db} }
+func NewAuthHandler(db *gorm.DB) *AuthHandler {
+	return &AuthHandler{DB: db} 
+}
 
 // Register 用户注册：校验参数 -> 去重 -> 哈希密码 -> 写库
 // POST /api/auth/register
