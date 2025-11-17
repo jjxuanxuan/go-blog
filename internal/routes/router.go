@@ -17,9 +17,11 @@ func SetupRouter() *gin.Engine {
 	model.InitDB()
 
 	uh := handler.NewUserHandler(model.DB)
-    ph := handler.NewPostHandler(model.DB)
-    ah := handler.NewAuthHandler(model.DB)
-    ch := handler.NewCommentHandler(model.DB)
+	ph := handler.NewPostHandler(model.DB)
+	ah := handler.NewAuthHandler(model.DB)
+	ch := handler.NewCommentHandler(model.DB)
+	gh := handler.NewCategoryHandler(model.DB)
+	th := handler.NewTagHandler(model.DB)
 
 	// 分组：/api/auth
 	apiAuth := router.Group("/api/auth")
@@ -30,21 +32,27 @@ func SetupRouter() *gin.Engine {
 	}
 
 	// 分组：/api（鉴权）
-    api := router.Group("/api")
-    api.Use(middleware.AuthMiddleware(), middleware.RequireUser())
-    {
-        api.GET("/me", uh.MeHandler)
+	api := router.Group("/api")
+	api.Use(middleware.AuthMiddleware(), middleware.RequireUser())
+	{
+		api.GET("/me", uh.MeHandler)
 
-        api.POST("/posts", ph.CreatePost)
-        api.GET("/posts", ph.GetAllPosts)
-        api.GET("/posts/:id", ph.GetPostsById)
-        api.PUT("/posts/:id", ph.UpdatePost)
-        api.DELETE("/posts/:id", ph.DeletePost)
+		api.POST("/posts", ph.CreatePost)
+		api.GET("/posts", ph.GetAllPosts)
+		api.GET("/posts/:id", ph.GetPostsById)
+		api.PUT("/posts/:id", ph.UpdatePost)
+		api.DELETE("/posts/:id", ph.DeletePost)
 
-        api.POST("/comments", ch.CreateComment)
-        api.DELETE("/comments/:id", ch.DeleteComment)
-        api.GET("/posts/:post_id/comments", ch.ListCommentsByPost)
-    }
+		api.POST("/comments", ch.CreateComment)
+		api.DELETE("/comments/:id", ch.DeleteComment)
+		api.GET("/posts/:id/comments", ch.ListCommentsByPost)
+
+		api.GET("/categories", gh.ListCategories)
+		api.POST("/categories", gh.CreateCategory)
+
+		api.GET("/tags", th.ListTags)
+		api.POST("/tags", th.CreateTag)
+	}
 
 	// 分组：/api/admin（鉴权+RBAC）
 	admin := router.Group("/api/admin")

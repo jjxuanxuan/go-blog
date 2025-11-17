@@ -63,7 +63,14 @@ func InitDB() {
 
 	DB = db
 
-	if err := DB.AutoMigrate(&User{}, &Post{}); err != nil {
+	if err := DB.AutoMigrate(
+		&User{},
+		&Post{},
+		Tag{},
+		PostTag{},
+		Comment{},
+		Category{},
+	); err != nil {
 		log.Fatalf("auto migrate error: %v", err)
 	}
 }

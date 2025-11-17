@@ -141,7 +141,7 @@ func (h *CommentHandler) DeleteComment(c *gin.Context) {
 }
 
 func (h *CommentHandler) ListCommentsByPost(c *gin.Context) {
-	postIdStr := c.Param("post_id")
+	postIdStr := c.Param("id")
 	if postIdStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,

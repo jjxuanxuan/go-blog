@@ -11,27 +11,5 @@
 - 启动：`go run cmd/server/main.go`
 - Base URL：`http://127.0.0.1:8080`
 
-## 接口概览（精简版）
-- 认证（前缀：`/api/auth`）
-  - `POST /api/auth/register` 注册
-  - `POST /api/auth/login` 登录（返回 `access_token`、`refresh_token`）
-  - `POST /api/auth/refresh` 刷新访问令牌
-- 用户
-  - `GET /api/me` 获取当前用户信息（需鉴权）
-- 文章（前缀：`/api`）
-  - `POST /api/posts` 创建（需鉴权）
-  - `GET /api/posts` 列表（需鉴权）
-  - `GET /api/posts/:id` 详情（需鉴权）
-  - `PUT /api/posts/:id` 更新（作者本人）
-  - `DELETE /api/posts/:id` 删除（作者本人）
-- 评论（前缀：`/api`）
-  - `POST /api/comments` 创建（需鉴权）
-  - `DELETE /api/comments/:id` 删除（作者本人）
-  - `GET /api/posts/:post_id/comments` 按文章查询（需鉴权，分页参数：`page`、`page_size`）
-
-提示
-- 鉴权方式：为受保护接口添加请求头 `Authorization: Bearer <access_token>`。
-- 通用返回：成功 `{\"code\":0,\"message\":\"ok|...\",\"data\":{...}}`；常见错误码 `400/401/403/404/409/500`。
-
 ## 更多文档
 - 详见 `docs/API.md`（包含完整示例与错误说明）。
