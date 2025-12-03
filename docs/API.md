@@ -110,14 +110,21 @@ curl http://127.0.0.1:8080/api/me \
 ### 5) 创建文章 `POST /api/posts`（鉴权）
 - 请求体（不需要 user_id）：
 ```json
-{ "title": "Hello", "content": "World" }
+{
+  "title": "Hello",
+  "content": "World",
+  "category_id": 1,
+  "tag_ids": [1, 2],
+  "status": "published"
+}
 ```
+- 说明：`category_id` 为必填；`tag_ids` 可选；`status` 可选（`draft`/`published`，未传则使用默认草稿）。
 - 示例：
 ```bash
 curl -X POST http://127.0.0.1:8080/api/posts \
   -H 'Authorization: Bearer <ACCESS_JWT>' \
   -H 'Content-Type: application/json' \
-  -d '{"title":"Hello","content":"World"}'
+  -d '{"title":"Hello","content":"World","category_id":1,"tag_ids":[1,2],"status":"published"}'
 ```
 - 成功响应：
 ```json
@@ -129,6 +136,7 @@ curl -X POST http://127.0.0.1:8080/api/posts \
 ```
 
 ### 6) 文章列表 `GET /api/posts`（鉴权）
+- 无分页，一次返回全部文章，包含作者信息（`user`），返回字段还包含 `category_id`、`status` 等模型字段。
 - 示例：
 ```bash
 curl http://127.0.0.1:8080/api/posts \
@@ -140,7 +148,14 @@ curl http://127.0.0.1:8080/api/posts \
   "code": 0,
   "message": "查询成功",
   "data": [
-    {"id":1,"title":"Hello","user_id":1,"user":{"id":1,"username":"alice"}}
+    {
+      "id":1,
+      "title":"Hello",
+      "user_id":1,
+      "category_id":1,
+      "status":"draft",
+      "user":{"id":1,"username":"alice"}
+    }
   ]
 }
 ```
@@ -153,20 +168,30 @@ curl http://127.0.0.1:8080/api/posts/1 \
 ```
 - 成功响应：
 ```json
-{ "code":0, "message":"查询成功", "data": {"id":1,"title":"Hello","user":{"id":1,"username":"alice"}} }
+{
+  "code":0,
+  "message":"查询成功",
+  "data": {"id":1,"title":"Hello","user_id":1,"category_id":1,"status":"draft","user":{"id":1,"username":"alice"}}
+}
 ```
 
 ### 8) 更新文章 `PUT /api/posts/:id`（鉴权，作者本人）
 - 请求体（任意字段可选）：
 ```json
-{ "title": "New Title", "content": "New Content" }
+{
+  "title": "New Title",
+  "content": "New Content",
+  "category_id": 2,
+  "tag_ids": [1,3],
+  "status": "published"
+}
 ```
 - 示例：
 ```bash
 curl -X PUT http://127.0.0.1:8080/api/posts/1 \
   -H 'Authorization: Bearer <ACCESS_JWT>' \
   -H 'Content-Type: application/json' \
-  -d '{"title":"New Title","content":"New Content"}'
+  -d '{"title":"New Title","content":"New Content","category_id":2,"tag_ids":[1,3],"status":"published"}'
 ```
 - 成功响应：
 ```json
@@ -216,7 +241,7 @@ curl -X DELETE http://127.0.0.1:8080/api/comments/1 \
 { "code":0, "message":"删除评论成功" }
 ```
 
-### 12) 某篇文章的评论列表 `GET /api/posts/:post_id/comments`（鉴权）
+### 12) 某篇文章的评论列表 `GET /api/posts/:id/comments`（鉴权）
 - 查询参数：`page`（默认 1）、`page_size`（默认 10，最大 100）
 - 示例：
 ```bash
@@ -237,13 +262,125 @@ curl 'http://127.0.0.1:8080/api/posts/1/comments?page=1&page_size=10' \
         "id": 1,
         "content": "Nice post!",
         "user": {"id": 2, "username": "bob"},
-        "post_id": 1,
-        "replies": [
-          { "id": 2, "content": "+1", "user": {"id": 3, "username": "tom"}, "post_id": 1, "parent_id": 1 }
-        ]
+        "post_id": 1
       }
     ]
   }
+}
+```
+
+### 13) 分类列表 `GET /api/categories`（鉴权）
+- 分类按 `sort` 升序返回。
+- 示例：
+```bash
+curl http://127.0.0.1:8080/api/categories \
+  -H 'Authorization: Bearer <ACCESS_JWT>'
+```
+- 成功响应（示例结构）：
+```json
+{
+  "code": 0,
+  "data": [
+    {
+      "id": 1,
+      "name": "技术",
+      "slug": "tech",
+      "parent_id": null
+    }
+  ]
+}
+```
+
+### 14) 创建分类 `POST /api/categories`（鉴权）
+- 请求体：
+```json
+{ "name": "技术", "slug": "tech", "parent_id": null }
+```
+- 示例：
+```bash
+curl -X POST http://127.0.0.1:8080/api/categories \
+  -H 'Authorization: Bearer <ACCESS_JWT>' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"技术","slug":"tech","parent_id":null}'
+```
+- 成功响应：
+```json
+{ "code": 0, "message": "ok" }
+```
+
+### 15) 标签列表 `GET /api/tags`（鉴权）
+- 按权重（`weight`）倒序返回。
+- 示例：
+```bash
+curl http://127.0.0.1:8080/api/tags \
+  -H 'Authorization: Bearer <ACCESS_JWT>'
+```
+- 成功响应（示例结构）：
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": [
+    {
+      "id": 1,
+      "name": "Golang",
+      "slug": "go",
+      "weight": 10
+    }
+  ]
+}
+```
+
+### 16) 创建标签 `POST /api/tags`（鉴权）
+- 请求体：
+```json
+{ "name": "Golang", "slug": "go" }
+```
+- 示例：
+```bash
+curl -X POST http://127.0.0.1:8080/api/tags \
+  -H 'Authorization: Bearer <ACCESS_JWT>' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Golang","slug":"go"}'
+```
+- 成功响应：
+```json
+{ "code": 0, "message": "ok" }
+```
+
+### 17) 上传图片（单文件） `POST /api/upload`（鉴权）
+- 请求：`multipart/form-data`，字段名 `file`；单文件大小 ≤ 5MB，请求体总大小 ≤ 10MB；白名单扩展名/类型：jpg、png、jpeg、git、webp。
+- 示例：
+```bash
+curl -X POST http://127.0.0.1:8080/api/upload \
+  -H 'Authorization: Bearer <ACCESS_JWT>' \
+  -F "file=@cover.jpg"
+```
+- 成功响应：
+```json
+{
+  "code": 0,
+  "message": "上传成功",
+  "data": { "url": "/static/uploads2025/11/21/xxxx.jpg" }
+}
+```
+  （当前单文件返回的 URL 前缀缺少一个 `/`，访问时可手动补成 `/static/uploads/…`）
+
+### 18) 上传图片（多文件） `POST /api/upload/multi`（鉴权）
+- 请求：`multipart/form-data`，字段名 `files`；每个文件 ≤ 5MB，请求体总大小 ≤ 50MB；白名单同上。
+- 示例：
+```bash
+curl -X POST http://127.0.0.1:8080/api/upload/multi \
+  -H 'Authorization: Bearer <ACCESS_JWT>' \
+  -F "files=@cover.jpg" \
+  -F "files=@hero.png"
+```
+- 成功响应：
+```json
+{
+  "code": 0,
+  "message": "上传成功",
+  "data": { "urls": ["/static/uploads/2025/11/21/xxx.jpg", "/static/uploads/2025/11/21/yyy.png"] }
 }
 ```
 
@@ -253,5 +390,5 @@ curl 'http://127.0.0.1:8080/api/posts/1/comments?page=1&page_size=10' \
 
 ## 其他说明
 - 受保护路由统一经过 `AuthMiddleware` 与 `RequireUser`，未携带或非法 Token 将返回 401。
-- 首次启动自动迁移数据表（`users`, `posts`, `comments`）。
-- 删除用户会级联删除其文章与评论（`OnDelete:CASCADE`）。如需保留，可改为允许外键为空并使用 `SET NULL`。
+- 首次启动自动迁移数据表（`users`, `posts`, `comments`, `categories`, `tags`, `post_tags`）。
+- 静态资源：上传文件会保存到 `storage/uploads/YYYY/MM/DD/`，通过 `/static/uploads/...` 访问。

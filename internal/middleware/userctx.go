@@ -6,10 +6,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// CtxUIDKey 在上下文中保存用户ID的键名。
 const CtxUIDKey = "uid"
 
-// RequireUser确保在上下文中存在一个有效的uid（由AuthMiddleware设置）。
-// 如果缺少或无效，则使用401终止。
+// RequireUser 确保上下文中存在有效 uid（由 AuthMiddleware 设置），缺失则返回 401。
 func RequireUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		v, ok := c.Get("user_id")
@@ -29,7 +29,7 @@ func RequireUser() gin.HandlerFunc {
 	}
 }
 
-// UID从上下文返回类型化的UID
+// UID 从上下文返回类型化的 UID。
 func UID(c *gin.Context) uint {
 	if v, ok := c.Get(CtxUIDKey); ok {
 		if id, ok := v.(uint); ok {

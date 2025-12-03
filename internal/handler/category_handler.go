@@ -1,28 +1,29 @@
 package handler
 
 import (
-	"github.com/gin-gonic/gin"
-	"go-blog/internal/dto"
-	"go-blog/internal/model"
-	"gorm.io/gorm"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"go-blog/internal/dto"
+	"go-blog/internal/service"
 )
 
-type CategoryHandler struct {
-	DB *gorm.DB
-}
+// CategoryHandler 处理分类相关 HTTP 请求。
+type CategoryHandler struct{ svc *service.CategoryService }
 
-func NewCategoryHandler(db *gorm.DB) *CategoryHandler {
-	return &CategoryHandler{DB: db}
+func NewCategoryHandler(svc *service.CategoryService) *CategoryHandler {
+	return &CategoryHandler{svc: svc}
 }
 
 // ListCategories GET /api/categories
 func (h *CategoryHandler) ListCategories(c *gin.Context) {
-	var cats []model.Category
-	if err := h.DB.Order("sort ASC,id ASC").Find(&cats).Error; err != nil {
+	cats, err := h.svc.ListCategories(c.Request.Context())
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "查询分类失败",
+			"detail":  err.Error(),
 		})
 		return
 	}
@@ -37,11 +38,12 @@ func (h *CategoryHandler) ListCategories(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"code": 0,
-		"data": resp,
-	})
+	"code": 0,
+	"data": resp,
+})
 }
 
+// CreateCategory 创建分类。
 func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 	var req dto.CreateCategoryReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -53,13 +55,7 @@ func (h *CategoryHandler) CreateCategory(c *gin.Context) {
 		return
 	}
 
-	cat := model.Category{
-		Name:     req.Name,
-		ParentId: req.ParentId,
-		Slug:     req.Slug,
-	}
-
-	if err := h.DB.Create(&cat).Error; err != nil {
+	if _, err := h.svc.CreateCategory(c.Request.Context(), req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "创建分类失败",

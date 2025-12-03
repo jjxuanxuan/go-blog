@@ -11,8 +11,10 @@ import (
 	"time"
 )
 
+// DB 全局数据库实例，由 InitDB 初始化。
 var DB *gorm.DB
 
+// InitDB 初始化数据库连接、连接池和自动迁移。
 func InitDB() {
 	appEnv := getEnv("APP_ENV", "development")
 
@@ -75,6 +77,7 @@ func InitDB() {
 	}
 }
 
+// getEnv 读取环境变量，若不存在则返回默认值。
 func getEnv(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

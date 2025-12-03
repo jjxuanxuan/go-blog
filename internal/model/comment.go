@@ -2,6 +2,7 @@ package model
 
 import "time"
 
+// Comment 表示文章下的评论，支持自引用回复。
 type Comment struct {
 	Id       uint   `json:"id" gorm:"primaryKey"`
 	Content  string `json:"content" gorm:"type:longtext;not null"`

@@ -1,24 +1,23 @@
 package handler
 
 import (
-	"github.com/gin-gonic/gin"
-	"go-blog/internal/dto"
-	"go-blog/internal/model"
-	"gorm.io/gorm"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"go-blog/internal/dto"
+	"go-blog/internal/service"
 )
 
-type TagHandler struct {
-	DB *gorm.DB
-}
+// TagHandler 处理标签相关 HTTP 请求。
+type TagHandler struct{ svc *service.TagService }
 
-func NewTagHandler(db *gorm.DB) *TagHandler {
-	return &TagHandler{DB: db}
-}
+func NewTagHandler(svc *service.TagService) *TagHandler { return &TagHandler{svc: svc} }
 
+// ListTags 获取标签列表。
 func (h *TagHandler) ListTags(c *gin.Context) {
-	var tags []model.Tag
-	if err := h.DB.Order("weight DESC, id ASC").Find(&tags).Error; err != nil {
+	tags, err := h.svc.ListTags(c.Request.Context())
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "查询标签失败",
@@ -42,6 +41,7 @@ func (h *TagHandler) ListTags(c *gin.Context) {
 	})
 }
 
+// CreateTag 新增标签。
 func (h *TagHandler) CreateTag(c *gin.Context) {
 	var req dto.CreateTagReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -52,14 +52,9 @@ func (h *TagHandler) CreateTag(c *gin.Context) {
 		})
 		return
 	}
-
-	tag := model.Tag{
-		Name: req.Name,
-		Slug: req.Slug,
-	}
-	if err := h.DB.Create(&tag).Error; err != nil {
+	if _, err := h.svc.CreateTag(c.Request.Context(), req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    400,
+			"code":    500,
 			"message": "创建标签失败",
 			"detail":  err.Error(),
 		})

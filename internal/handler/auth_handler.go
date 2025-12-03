@@ -3,24 +3,18 @@ package handler
 
 import (
 	"errors"
-	"go-blog/internal/dto"
-	"go-blog/internal/model"
-	"go-blog/internal/util"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+
+	"go-blog/internal/dto"
+	"go-blog/internal/service"
 )
 
 // AuthHandler 处理认证相关的 HTTP 请求。
-type AuthHandler struct {
-    DB *gorm.DB
-}
+type AuthHandler struct{ svc *service.AuthService }
 
-func NewAuthHandler(db *gorm.DB) *AuthHandler {
-	return &AuthHandler{DB: db} 
-}
+func NewAuthHandler(svc *service.AuthService) *AuthHandler { return &AuthHandler{svc: svc} }
 
 // Register 用户注册：校验参数 -> 去重 -> 哈希密码 -> 写库
 // POST /api/auth/register
@@ -35,40 +29,12 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	// 检查用户名或邮箱是否已存在
-	var count int64
-	if err := h.DB.Model(&model.User{}).Where("username=? OR email=?", req.Username, req.Email).Count(&count).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "数据库查询失败",
-			"detail":  err.Error(),
-		})
-		return
-	}
-	if count > 0 {
-		c.JSON(http.StatusConflict, gin.H{
-			"code":    409,
-			"message": "用户名或邮箱已存在",
-		})
-		return
-	}
-
-	hashed, err := util.HashPassword(req.Password)
+	user, err := h.svc.Register(c.Request.Context(), req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "密码加密失败",
-		})
-		return
-	}
-
-	u := model.User{
-		Username: req.Username,
-		Email:    req.Email,
-		Password: hashed,
-		Role:     "user",
-	}
-	if err := h.DB.Create(&u).Error; err != nil {
+		if errors.Is(err, service.ErrUserAlreadyExists) {
+			c.JSON(http.StatusConflict, gin.H{"code": 409, "message": "用户名或邮箱已存在"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "创建用户失败",
@@ -80,9 +46,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		"code":    0,
 		"message": "注册成功",
 		"data": gin.H{
-			"id":       u.ID,
-			"username": u.Username,
-			"email":    u.Email,
+			"id":       user.ID,
+			"username": user.Username,
+			"email":    user.Email,
 		},
 	})
 }
@@ -99,9 +65,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		})
 		return
 	}
-	var u model.User
-	if err := h.DB.Where("username=?", req.Username).First(&u).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	at, rt, err := h.svc.Login(c.Request.Context(), req)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":    401,
 				"message": "用户名或密码错误",
@@ -110,31 +76,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "查询用户失败",
+			"message": "登录失败",
 			"detail":  err.Error(),
-		})
-		return
-	}
-	if !util.CheckPassword(u.Password, req.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "用户名或密码错误",
-		})
-		return
-	}
-	at, err := util.GenerateAccessToken(u.ID, u.Role)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "签发 access_token 失败",
-		})
-		return
-	}
-	rt, err := util.GenerateRefreshToken(u.ID, u.Role)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "签发 refresh_token 失败",
 		})
 		return
 	}
@@ -162,31 +105,19 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		})
 		return
 	}
-	claims, err := util.ParseToken(req.RefreshToken)
+	at, err := h.svc.RefreshAccessToken(c.Request.Context(), req.RefreshToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "无效Token",
-		})
-		return
-	}
-
-	// subject 是用户ID（字符串），使用 64 位解析更安全
-	uid64, err := strconv.ParseUint(claims.Subject, 10, 64)
-	if err != nil || uid64 == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"code":    401,
-			"message": "无效Token",
-		})
-		return
-	}
-	uid := uint(uid64)
-
-	at, err := util.GenerateAccessToken(uid, claims.Role)
-	if err != nil {
+		if errors.Is(err, service.ErrInvalidRefresh) {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "无效Token",
+			})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
-			"message": "签发 access_token 失败",
+			"message": "刷新令牌失败",
+			"detail":  err.Error(),
 		})
 		return
 	}

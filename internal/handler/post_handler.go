@@ -5,25 +5,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"go-blog/internal/dto"
 	"go-blog/internal/middleware"
-	"go-blog/internal/model"
 	"go-blog/internal/repository"
-	"gorm.io/gorm"
+	"go-blog/internal/service"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 )
 
+// PostHandler 处理文章相关 HTTP 请求。
 type PostHandler struct {
-	DB   *gorm.DB
-	Repo *repository.PostRepository
+	svc *service.PostService
 }
 
-func NewPostHandler(db *gorm.DB) *PostHandler {
-	return &PostHandler{
-		DB:   db,
-		Repo: repository.NewPostRepository(db),
-	}
+func NewPostHandler(svc *service.PostService) *PostHandler {
+	return &PostHandler{svc: svc}
 }
 
 // CreatePost 创建文章：从上下文获取 uid，避免客户端伪造 user_id。
@@ -38,18 +34,10 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 		return
 	}
 
-	// 从中间件中获取 uid（RequireUser 已保证存在）
 	uid := middleware.UID(c)
 
-	post := model.Post{
-		Title:      req.Title,
-		Content:    req.Content,
-		CategoryId: req.CategoryId,
-		Status:     req.Status,
-		UserID:     uid,
-	}
-
-	if err := h.DB.Create(&post).Error; err != nil {
+	post, err := h.svc.CreatePost(c.Request.Context(), uid, req)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "创建文章失败",
@@ -58,19 +46,6 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 		return
 	}
 
-	// 处理 TagIDs
-	if len(req.TagIds) > 0 {
-		var tags []model.Tag
-		if err := h.DB.Where("id IN ?", req.TagIds).Find(&tags).Error; err != nil {
-			// 标签查询失败可以返回，但文章已创建，看你设计
-		} else {
-			if err := h.DB.Model(&post).Association("Tags").Replace(&tags); err != nil {
-				// 关联失败处理
-			}
-		}
-	}
-
-	//创建成功
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "创建文章成功",
@@ -82,15 +57,12 @@ func (h *PostHandler) CreatePost(c *gin.Context) {
 			"created_at": post.CreatedAt.Format(time.RFC3339),
 		},
 	})
-
 }
 
 // GetAllPosts 获取所有文章列表（预加载作者信息）。
 func (h *PostHandler) GetAllPosts(c *gin.Context) {
-	var posts []model.Post
-
-	//查询所有文章和它的作者
-	if err := h.DB.Preload("User").Find(&posts).Error; err != nil {
+	posts, err := h.svc.GetAllPosts(c.Request.Context())
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "查询失败",
@@ -104,20 +76,31 @@ func (h *PostHandler) GetAllPosts(c *gin.Context) {
 		"message": "查询成功",
 		"data":    posts,
 	})
-
 }
 
 // GetPostsById 根据ID查询单篇文章详情，预加载作者信息。
+// 保留你原来的函数名，避免改路由。
 func (h *PostHandler) GetPostsById(c *gin.Context) {
-	id := c.Param("id")
+	idStr := c.Param("id")
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil || id64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	id := uint(id64)
 
-	var post model.Post
-	if err := h.DB.Preload("User").First(&post, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "查询失败",
-			"detail":  err.Error(),
-		})
+	post, err := h.svc.GetPostByID(c.Request.Context(), id)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrPostNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "文章不存在"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "查询失败",
+				"detail":  err.Error(),
+			})
+		}
 		return
 	}
 
@@ -130,8 +113,14 @@ func (h *PostHandler) GetPostsById(c *gin.Context) {
 
 // UpdatePost 更新文章内容：仅作者本人可更新，空字段不覆盖。
 func (h *PostHandler) UpdatePost(c *gin.Context) {
+	idStr := c.Param("id")
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil || id64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	id := uint(id64)
 
-	id := c.Param("id")
 	var req dto.UpdatePostReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -142,56 +131,23 @@ func (h *PostHandler) UpdatePost(c *gin.Context) {
 		return
 	}
 
-	// 鉴权用户（RequireUser 已保证存在）
 	uid := middleware.UID(c)
 
-	var post model.Post
-	if err := h.DB.First(&post, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	post, err := h.svc.UpdatePost(c.Request.Context(), uid, id, req)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrPostNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "文章不存在"})
-			return
+		case errors.Is(err, service.ErrForbidden):
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "无权操作该文章"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "更新失败",
+				"detail":  err.Error(),
+			})
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "查询失败", "detail": err.Error()})
 		return
-	}
-
-	if post.UserID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "无权操作该文章"})
-		return
-	}
-
-	if req.Title != nil {
-		post.Title = *req.Title
-	}
-	if req.Content != nil {
-		post.Content = *req.Content
-	}
-	if req.Status != nil {
-		post.Status = *req.Status
-	}
-	if req.CategoryID != nil {
-		post.CategoryId = *req.CategoryID
-	}
-	// 让 GORM 自动维护 UpdatedAt，不要覆盖 CreatedAt
-
-	if err := h.DB.Save(&post).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "更新失败",
-			"detail":  err.Error(),
-		})
-		return
-	}
-
-	// 更新标签关联
-	var tags []model.Tag
-	if len(req.TagIDs) > 0 {
-		if err := h.DB.Where("id IN ?", req.TagIDs).Find(&tags).Error; err != nil {
-			// 错误处理
-		}
-	}
-	if err := h.DB.Model(&post).Association("Tags").Replace(&tags); err != nil {
-		// 错误处理
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -199,38 +155,33 @@ func (h *PostHandler) UpdatePost(c *gin.Context) {
 		"message": "更新成功",
 		"data":    post,
 	})
-
 }
 
 // DeletePost 删除文章：仅作者本人可删除。
 func (h *PostHandler) DeletePost(c *gin.Context) {
+	idStr := c.Param("id")
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil || id64 == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	id := uint(id64)
 
-	id := c.Param("id")
-
-	// 鉴权用户（RequireUser 已保证存在）
 	uid := middleware.UID(c)
 
-	var post model.Post
-	if err := h.DB.First(&post, id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := h.svc.DeletePost(c.Request.Context(), uid, id); err != nil {
+		switch {
+		case errors.Is(err, service.ErrPostNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "文章不存在"})
-			return
+		case errors.Is(err, service.ErrForbidden):
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "无权操作该文章"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"code":    500,
+				"message": "删除失败",
+				"detail":  err.Error(),
+			})
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "查询失败", "detail": err.Error()})
-		return
-	}
-
-	if post.UserID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "无权操作该文章"})
-		return
-	}
-
-	if err := h.DB.Delete(&post).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "删除失败",
-			"detail":  err.Error(),
-		})
 		return
 	}
 
@@ -240,6 +191,7 @@ func (h *PostHandler) DeletePost(c *gin.Context) {
 	})
 }
 
+// ListPosts 列表查询：分页 + 分类筛选 + 标签筛选 + 状态 + 关键字 + 排序
 func (h *PostHandler) ListPosts(c *gin.Context) {
 	// 解析 query 参数
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -284,7 +236,7 @@ func (h *PostHandler) ListPosts(c *gin.Context) {
 		PageSize:   pageSize,
 	}
 
-	posts, total, err := h.Repo.ListPosts(c.Request.Context(), filter)
+	posts, total, err := h.svc.ListPosts(c.Request.Context(), filter)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "查询文章失败", "detail": err.Error()})
 		return
@@ -293,9 +245,10 @@ func (h *PostHandler) ListPosts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 0,
 		"data": gin.H{
-			"list":  posts, // 你也可以转换成 PostResp DTO
-			"total": total,
-			"page":  page,
+			"list":     posts,
+			"total":    total,
+			"page":     page,
+			"pageSize": pageSize,
 		},
 	})
 }
